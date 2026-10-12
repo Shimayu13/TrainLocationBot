@@ -85,7 +85,8 @@ def create_bot(settings):
     async def information(ctx, *, operator: str = "JR"):
         async with ctx.typing():
             result = await bot.railways.run(bot.railways.information, operator.strip())
-        await send(ctx, result)
+        if result is not None:
+            await send(ctx, result)
 
     @bot.command(name="対応路線")
     async def supported(ctx):

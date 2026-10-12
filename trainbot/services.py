@@ -1,7 +1,8 @@
 import asyncio
 import importlib
+import re
 
-from .catalog import LEGACY_LINES, TOBU_LINES, operator_for
+from .catalog import INFORMATION_LINES, LEGACY_LINES, TOBU_LINES, operator_for
 from .odpt import ODPTError, default_client
 
 
@@ -9,6 +10,18 @@ def japanese(value, fallback=""):
     if isinstance(value, dict):
         return value.get("ja") or value.get("en") or fallback
     return value if isinstance(value, str) and value else fallback
+
+
+def is_normal_information(info):
+    def normalize(text):
+        return re.sub(r"[\s。、.!！]", "", text).lower()
+    normal = {"平常運転", "平常運行", "通常運転", "通常運行", "平常どおり運転しています", "平常通り運転しています",
+              "平常運転しています", "平常運行しています", "通常運転しています", "normalservice", "normaloperation"}
+    normal |= {"現在" + text for text in normal if not text.isascii()}
+    status = normalize(japanese(info.get("odpt:trainInformationStatus")))
+    content = normalize(japanese(info.get("odpt:trainInformationText")))
+    # A normal status must not hide explanatory text about a disruption.
+    return (not status or status in normal) and (content in normal or not content and status in normal)
 
 
 class RailwayService:
@@ -72,12 +85,36 @@ class RailwayService:
         return "\n".join(lines)
 
     def information(self, name):
+        name = name.strip()
+        railway_id = None
         operator = operator_for(name)
+        if name in INFORMATION_LINES:
+            operator, railway_id = INFORMATION_LINES[name]
+        elif operator is None:
+            parts = name.split(maxsplit=1)
+            if len(parts) == 2 and operator_for(parts[0]):
+                operator = operator_for(parts[0])
+                selected = INFORMATION_LINES.get(parts[1])
+                if selected and selected[0] == operator:
+                    railway_id = selected[1]
+                else:
+                    matches = [r for r in self.client.fetch("Railway", operator.id) if parts[1] in {
+                        japanese(r.get("odpt:railwayTitle")), japanese(r.get("dc:title")), r.get("owl:sameAs"),
+                        str(r.get("owl:sameAs", "")).removeprefix("odpt.Railway:") }]
+                    if len(matches) == 1:
+                        railway_id = matches[0].get("owl:sameAs")
+                    if not railway_id:
+                        raise ODPTError("指定した路線が見つかりません。事業者と路線名を確認してください。")
+            else:
+                raw = name.removeprefix("odpt.Railway:")
+                if "." in raw:
+                    operator = operator_for(raw.split(".", 1)[0])
+                    railway_id = "odpt.Railway:" + raw
         if operator is None:
-            raise ODPTError("事業者が見つかりません。「運行情報対応路線」を確認してください。")
-        return self.operator_information(operator.name, operator.id, operator.information_id)
+            raise ODPTError("事業者・路線が見つかりません。「運行情報対応路線」「対応路線」を確認してください。")
+        return self.operator_information(name if railway_id else operator.name, operator.id, operator.information_id, railway_id=railway_id)
 
-    def operator_information(self, name, station_operator, information_operator):
+    def operator_information(self, name, station_operator, information_operator, *, railway_id=None):
         from .legacy.TrainInformation import RailwayInfo
         mapping = RailwayInfo("odpt.Operator:" + information_operator, "").get_railway_mapping()
         try:
@@ -86,6 +123,12 @@ class RailwayService:
         except ODPTError:
             pass  # Static titles still work if metadata is temporarily unavailable.
         data = self.client.fetch("TrainInformation", information_operator)
+        if railway_id:
+            data = [info for info in data if info.get("odpt:railway") == railway_id]
+        elif data:
+            data = [info for info in data if not is_normal_information(info)]
+            if not data:
+                return None
         lines = [name + " 運行情報"]
         if not data:
             lines.append("現在、公開されている運行情報はありません。（平常運転の保証ではありません）")

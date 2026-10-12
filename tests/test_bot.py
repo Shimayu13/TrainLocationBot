@@ -141,6 +141,34 @@ class RailwayTests(unittest.TestCase):
         client.fetch.side_effect = lambda kind, operator: [] if kind == "Railway" else [{"odpt:trainInformationStatus": None, "odpt:trainInformationText": {"ja": "遅延しています"}}]
         self.assertIn("遅延しています", RailwayService(client).information("JR"))
 
+    def test_normal_routes_are_omitted_unless_a_line_is_requested(self):
+        normal = {"odpt:railway": "odpt.Railway:JR-East.Tokaido", "odpt:trainInformationText": {"ja": "平常運転しています。"}}
+        delayed = {"odpt:railway": "odpt.Railway:JR-East.Yamanote", "odpt:trainInformationText": {"ja": "遅延しています。"}}
+        client = Mock()
+        client.fetch.side_effect = lambda kind, operator: [] if kind == "Railway" else [normal, delayed]
+        service = RailwayService(client)
+        result = service.information("JR")
+        self.assertNotIn("平常運転", result)
+        self.assertIn("遅延しています", result)
+        for query in ["東海道線", "JR 東海道線", "JR-East.Tokaido"]:
+            result = service.information(query)
+            self.assertIn("平常運転しています", result)
+            self.assertNotIn("遅延しています", result)
+
+    def test_all_normal_is_silent_but_missing_information_is_not(self):
+        client = Mock()
+        client.fetch.side_effect = lambda kind, operator: [] if kind == "Railway" else [{"odpt:trainInformationText": {"ja": "平常運転"}}]
+        service = RailwayService(client)
+        self.assertIsNone(service.information("JR"))
+        client.fetch.return_value = []
+        client.fetch.side_effect = None
+        self.assertIn("公開されている運行情報はありません", service.information("JR"))
+
+    def test_normal_status_does_not_hide_disruption_details(self):
+        from trainbot.services import is_normal_information
+        self.assertFalse(is_normal_information({"odpt:trainInformationStatus": {"ja": "平常運転"}, "odpt:trainInformationText": {"ja": "現在平常運転ですが、一部列車に遅れがあります。"}}))
+
+
     def test_yokohama_renderers_with_api_fixture(self):
         from trainbot.odpt import LegacyResponse
         for suffix, railway, code in [("BL", "Blue", "B"), ("GL", "Green", "G")]:
@@ -175,6 +203,17 @@ class FakeSDK:
 
 
 class BotMessageTests(unittest.IsolatedAsyncioTestCase):
+    async def test_all_normal_result_sends_no_reply(self):
+        bot = create_bot(settings())
+        ctx = Mock(send=AsyncMock())
+        class Typing:
+            async def __aenter__(self): pass
+            async def __aexit__(self, *args): pass
+        ctx.typing.return_value = Typing()
+        with patch.object(bot.railways, "run", new=AsyncMock(return_value=None)):
+            await bot.get_command("運行情報").callback(ctx, operator="JR")
+        ctx.send.assert_not_awaited()
+
     async def test_other_bot_and_human_commands_are_processed(self):
         bot = create_bot(settings())
         bot._connection.user = Mock(id=100)

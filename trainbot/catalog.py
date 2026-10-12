@@ -59,3 +59,24 @@ TOBU_LINES = {
     "東武亀戸線": "Kameido", "東武大師線": "Daishi",
 }
 COVERAGE = "東武の列車位置は館林以北・新栃木以北が対象外。亀戸線の小村井〜東あずま〜亀戸水神は在線位置を区別できません。"
+
+_JR_INFORMATION_IDS = {
+    "JY": "Yamanote", "JC": "ChuoRapid", "CO": "Chuo", "JCG": "ChuoRapid",
+    "JB": "ChuoSobuLocal", "JC_O": "Ome", "JC_I": "Itsukaichi",
+    "JA": "SaikyoKawagoe", "JA_SO": "SotetsuDirect", "JREKA": "Kawagoe",
+    "JS": "ShonanShinjuku", "JE": "Keiyo", "JH": "Yokohama", "JJ": "JobanRapid",
+    "JL": "JobanLocal", "JK": "KeihinTohokuNegishi", "JM": "Musashino", "JN": "Nambu",
+    "JO": "Yokosuka", "JOS": "SobuRapid", "JT": "Tokaido", "JU": "Utsunomiya", "JU_Taka": "Takasaki",
+}
+INFORMATION_LINES = {
+    name: (OPERATORS["JR"], "odpt.Railway:JR-East." + _JR_INFORMATION_IDS[module])
+    for name, module in LEGACY_LINES.items() if module in _JR_INFORMATION_IDS
+}
+for name, line in {"都営浅草線": "Asakusa", "都営三田線": "Mita", "都営大江戸線": "Oedo", "都営新宿線": "Shinjuku"}.items():
+    INFORMATION_LINES[name] = (OPERATORS["都営"], "odpt.Railway:Toei." + line)
+for name, line in {"ブルーライン": "Blue", "グリーンライン": "Green"}.items():
+    INFORMATION_LINES[name] = (OPERATORS["横浜市営"], "odpt.Railway:YokohamaMunicipal." + line)
+for name, line in {**TOBU_LINES, "東武東上線": "Tojo"}.items():
+    INFORMATION_LINES[name] = (OPERATORS["東武"], "odpt.Railway:Tobu." + line)
+for name, line in {"京急本線": "Main", "京急空港線": "Airport", "京急大師線": "Daishi", "京急逗子線": "Zushi", "京急久里浜線": "Kurihama"}.items():
+    INFORMATION_LINES[name] = (OPERATORS["京急"], "odpt.Railway:Keikyu." + line)
