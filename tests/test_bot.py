@@ -203,6 +203,38 @@ class FakeSDK:
 
 
 class BotMessageTests(unittest.IsolatedAsyncioTestCase):
+    async def test_mention_uses_trailing_message_without_invoking_command(self):
+        bot = create_bot(settings())
+        bot._connection.user = Mock(id=100)
+        ctx = Mock()
+        with patch.object(bot, "get_context", new=AsyncMock(return_value=ctx)), patch.object(bot, "reply_ai", new=AsyncMock()) as reply, patch.object(bot, "invoke", new=AsyncMock()) as invoke:
+            for content, prompt in [("<@100> こんにちは", "こんにちは"), ("<@!100>\n文章を考えて\n短めに", "文章を考えて\n短めに"), ("質問です <@100> こんにちは <@100>", "こんにちは")]:
+                await bot.on_message(Mock(author=Mock(id=200, bot=False), content=content))
+                reply.assert_awaited_with(ctx, prompt)
+            invoke.assert_not_awaited()
+
+    async def test_bare_mention_gives_help_and_ai_error_is_reported(self):
+        bot = create_bot(settings())
+        bot._connection.user = Mock(id=100)
+        ctx = Mock(send=AsyncMock())
+        with patch.object(bot, "get_context", new=AsyncMock(return_value=ctx)), patch.object(bot, "reply_ai", new=AsyncMock(side_effect=AIError("モデル未準備"))) as reply:
+            await bot.on_message(Mock(author=Mock(id=200), content="<@100> "))
+            reply.assert_not_awaited()
+            self.assertIn("質問を書いて", ctx.send.await_args.args[0])
+            await bot.on_message(Mock(author=Mock(id=200), content="<@100> 質問"))
+            self.assertEqual(ctx.send.await_args.args[0], "モデル未準備")
+
+    async def test_other_mentions_do_not_trigger_ai_and_own_mentions_are_ignored(self):
+        bot = create_bot(settings())
+        bot._connection.user = Mock(id=100)
+        with patch.object(bot, "get_context", new=AsyncMock()), patch.object(bot, "reply_ai", new=AsyncMock()) as reply, patch.object(bot, "invoke", new=AsyncMock()) as invoke:
+            for content in ["<@200> こんにちは", "<@&100> こんにちは", "@everyone こんにちは"]:
+                await bot.on_message(Mock(author=Mock(id=200), content=content))
+            self.assertEqual(invoke.await_count, 3)
+            await bot.on_message(Mock(author=Mock(id=100), content="<@100> 自分の返信"))
+            reply.assert_not_awaited()
+            self.assertEqual(invoke.await_count, 3)
+
     async def test_all_normal_result_sends_no_reply(self):
         bot = create_bot(settings())
         ctx = Mock(send=AsyncMock())

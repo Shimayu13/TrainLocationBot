@@ -3,6 +3,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 import os
 import random
+import re
 import signal
 
 import discord
@@ -46,7 +47,25 @@ class TrainBot(commands.Bot):
         if self.user is None or message.author.id == self.user.id:
             return
         ctx = await self.get_context(message)
+        content = message.content
+        mention = re.compile(rf"<@!?{self.user.id}>")
+        match = mention.search(content) if isinstance(content, str) else None
+        if match:
+            prompt = mention.sub("", content[match.end():]).strip()
+            if not prompt:
+                await send(ctx, "メンションの後に質問を書いてください。例: @Bot こんにちは")
+                return
+            try:
+                await self.reply_ai(ctx, prompt)
+            except Exception as error:
+                await self.on_command_error(ctx, error)
+            return
         await self.invoke(ctx)
+
+    async def reply_ai(self, ctx, prompt):
+        async with ctx.typing():
+            result = await self.ai.respond(conversation_key(ctx), prompt)
+        await send(ctx, result)
 
     async def on_command_error(self, ctx, error):
         if isinstance(error, commands.CommandNotFound):
@@ -114,9 +133,7 @@ def create_bot(settings):
 
     @bot.command(name="AI", aliases=["ai"])
     async def ai(ctx, *, prompt: str):
-        async with ctx.typing():
-            result = await bot.ai.respond(conversation_key(ctx), prompt)
-        await send(ctx, result)
+        await bot.reply_ai(ctx, prompt)
 
     @bot.command(name="AIリセット", aliases=["aiリセット"])
     async def ai_reset(ctx):
