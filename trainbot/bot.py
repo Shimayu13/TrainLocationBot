@@ -53,7 +53,7 @@ class TrainBot(commands.Bot):
         if match:
             prompt = mention.sub("", content[match.end():]).strip()
             if not prompt:
-                await send(ctx, "メンションの後に質問を書いてください。例: @Bot こんにちは")
+                await send(ctx, "こんにちは。私はApple Foundation Modelを用いたAIです。例のように質問を送信してください。例: @Bot こんにちは")
                 return
             try:
                 await self.reply_ai(ctx, prompt)
