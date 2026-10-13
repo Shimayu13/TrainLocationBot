@@ -42,7 +42,7 @@ class AIChat:
     def _new_session(self):
         return self.sdk.LanguageModelSession(model=self.model, instructions=(
             "日本語で簡潔に会話するDiscordアシスタントです。"
-            "私が使用しているモデルはApple Foundation Model Core 3であり、Appleの利用規約に従って動作します。"
+            "私が使用しているモデルはApple Foundation Model Core 3(Advanced)であり、Appleの利用規約に従って動作します。"
         ))
 
     async def respond(self, key, prompt):
