@@ -37,3 +37,21 @@
 比較質問はスクリプト内の固定の一般的な質問のみで、個人のDiscord会話や秘密情報を参照しない。
 
 [Apple公式生成設定の説明](https://apple.github.io/python-apple-fm-sdk/api/generation_options.html)
+
+## Menima応答モードの追加検証
+
+同じ質問「Pythonの仮想環境の役割と使い方を、初心者にも分かるように説明してください。」を、各モードの新しいセッションへ渡して比較した。
+
+| モード | 実測の回答長 | 推論時間 |
+| --- | --- | --- |
+| Menima AI Lite | 55文字 | 3.13秒 |
+| Menima AI Flash | 360文字 | 4.20秒 |
+| Menima AI Plus | 1076文字 | 10.27秒 |
+
+PlusではMarkdownの見出し、箇条書き、強調、コードブロックが出力された。単回比較であり文字数の保証ではない。回答の内容にはモデル由来の不正確さが残るため、長さ・書式の改善と事実の正確性は別に評価する。
+
+回帰テストは34件通過。3モードの指示、利用者・チャンネル間の設定分離、切り替え時の履歴リセット、同じモードの再指定時の履歴維持、設定の件数制限、Discordの切り替えコマンドから実際のAI応答への適用を確認。
+
+```sh
+.venv/bin/python scripts/evaluate_ai.py --modes --output /tmp/trainbot-ai-modes.json
+```

@@ -46,11 +46,30 @@ async def evaluate(output):
         raise SystemExit(1)
 
 
+async def evaluate_modes(output):
+    ai = AIChat(Settings.load())
+    await asyncio.to_thread(ai.initialize)
+    if not ai.available:
+        raise SystemExit(ai.status)
+    prompt = "Pythonの仮想環境の役割と使い方を、初心者にも分かるように説明してください。"
+    rows = []
+    for mode in ["lite", "flash", "plus"]:
+        key = (0, 0, 0)
+        await ai.set_mode(key, mode)
+        started = time.monotonic()
+        response = await ai.respond(key, prompt)
+        row = {"mode": mode, "prompt": prompt, "response": response, "characters": len(response), "seconds": round(time.monotonic() - started, 2)}
+        rows.append(row)
+        output.write_text(json.dumps(rows, ensure_ascii=False, indent=2) + "\n")
+        print(mode, row["characters"], "characters", row["seconds"], "seconds", flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--modes", action="store_true", help="Compare Lite, Flash, and Plus on the same prompt")
     args = parser.parse_args()
-    asyncio.run(evaluate(args.output))
+    asyncio.run(evaluate_modes(args.output) if args.modes else evaluate(args.output))
 
 
 if __name__ == "__main__":

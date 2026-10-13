@@ -5,12 +5,19 @@ import time
 
 AI_INSTRUCTIONS = (
     "あなたは日本語で自然に会話する汎用アシスタントです。利用者の質問と会話の文脈に直接答えてください。"
-    "説明や相談では結論に加えて理由、具体例、必要なら手順を示し、通常は300〜700文字程度の数段落で十分に説明してください。"
+    "選択された応答モードの詳しさに合わせて回答してください。短文モードでは要点を優先し、詳細モードでは理由・具体例・手順を添えてください。"
     "これは目安です。挨拶や単純な質問は短く、複雑な質問は必要なだけ詳しく答えてください。利用者の長さや形式の指定を優先してください。"
     "毎回同じ導入や結び、自己紹介、決まり文句を繰り返さず、話題に合った自然な表現と構成を選んでください。"
     "同じ説明を言い換えて繰り返さず、具体例は理由が伝わるものを選んでください。複数の案を求められたら、特徴や方法が異なる案を挙げてください。"
     "文章を水増しせず、不確かなことや取得していない最新情報は断定しないでください。"
 )
+
+
+AI_MODES = {
+    "lite": ("Menima AI Lite", "短文モードです。通常80〜180文字程度、原則1〜2文で結論だけを答えてください。理由や具体例、手順の詳細な補足は省いてください。長い導入や装飾は使わないでください。"),
+    "flash": ("Menima AI Flash", "説明・相談は通常200〜450文字程度で、結論と理由、役立つ具体例を適度に含めてください。"),
+    "plus": ("Menima AI Plus", "説明・相談は通常500〜1200文字程度で、理由・具体例・手順を十分に説明してください。必要に応じてMarkdownの見出し、箇条書き、強調、コードブロックを使えます。"),
+}
 
 
 class AIError(RuntimeError):
@@ -22,6 +29,7 @@ class Conversation:
     session: object
     touched: float
     turns: int = 0
+    mode: str = "plus"
 
 
 class AIChat:
@@ -29,6 +37,7 @@ class AIChat:
         self.settings = settings
         self.sdk = sdk
         self.sessions = OrderedDict()
+        self.modes = OrderedDict()
         self.lock = asyncio.Lock()
         self.pending = 0
         self.available = False
@@ -48,8 +57,25 @@ class AIChat:
             self.available = False
             self.status = "Apple公式SDK・OS・Apple Intelligenceの設定を確認してください。"
 
-    def _new_session(self):
-        return self.sdk.LanguageModelSession(model=self.model, instructions=AI_INSTRUCTIONS)
+    def mode_for(self, key):
+        return self.modes.get(key, "plus")
+
+    async def set_mode(self, key, name):
+        mode = name.strip().casefold().removeprefix("menima ai ")
+        mode = {"ライト": "lite", "フラッシュ": "flash", "プラス": "plus"}.get(mode, mode)
+        if mode not in AI_MODES:
+            raise AIError("モードは Lite・Flash・Plus から選んでください。例: AIモード Lite")
+        async with self.lock:
+            if self.mode_for(key) != mode:
+                self.sessions.pop(key, None)
+            self.modes.pop(key, None)
+            while len(self.modes) >= self.settings.ai_max_sessions:
+                self.modes.popitem(last=False)
+            self.modes[key] = mode
+        return AI_MODES[mode][0]
+
+    def _new_session(self, mode="plus"):
+        return self.sdk.LanguageModelSession(model=self.model, instructions=AI_INSTRUCTIONS + "応答モード: " + AI_MODES[mode][0] + "。" + AI_MODES[mode][1])
 
     def _generation_options(self):
         return self.sdk.GenerationOptions(
@@ -75,8 +101,11 @@ class AIChat:
                     if now - self.sessions[old_key].touched >= self.settings.ai_ttl:
                         del self.sessions[old_key]
                 conversation = self.sessions.pop(key, None)
-                if conversation is None or conversation.turns >= self.settings.ai_max_turns:
-                    conversation = Conversation(self._new_session(), now)
+                mode = self.mode_for(key)
+                if key in self.modes:
+                    self.modes.move_to_end(key)
+                if conversation is None or conversation.turns >= self.settings.ai_max_turns or conversation.mode != mode:
+                    conversation = Conversation(self._new_session(mode), now, mode=mode)
                 while len(self.sessions) >= self.settings.ai_max_sessions:
                     self.sessions.popitem(last=False)
                 self.sessions[key] = conversation

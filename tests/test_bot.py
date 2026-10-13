@@ -221,6 +221,22 @@ class FakeSDK:
 
 
 class BotMessageTests(unittest.IsolatedAsyncioTestCase):
+    async def test_mode_command_selects_reports_and_reaches_ai_reply(self):
+        bot = create_bot(settings())
+        bot.ai = AIChat(settings(), FakeSDK)
+        bot.ai.initialize()
+        ctx = Mock(guild=Mock(id=1), channel=Mock(id=2), author=Mock(id=3), send=AsyncMock())
+        class Typing:
+            async def __aenter__(self): pass
+            async def __aexit__(self, *args): pass
+        ctx.typing.return_value = Typing()
+        await bot.get_command("AIモード").callback(ctx, mode="Menima AI Lite")
+        self.assertIn("Menima AI Lite", ctx.send.await_args.args[0])
+        await bot.get_command("AIモード").callback(ctx)
+        self.assertIn("現在のモード: Menima AI Lite", ctx.send.await_args.args[0])
+        await bot.reply_ai(ctx, "質問")
+        self.assertEqual(bot.ai.sessions[(1, 2, 3)].mode, "lite")
+
     async def test_mention_uses_trailing_message_without_invoking_command(self):
         bot = create_bot(settings())
         bot._connection.user = Mock(id=100)
@@ -286,6 +302,39 @@ class BotMessageTests(unittest.IsolatedAsyncioTestCase):
 
 
 class AITests(unittest.IsolatedAsyncioTestCase):
+    async def test_mode_switching_resets_history_and_isolated_by_user_channel(self):
+        ai = AIChat(settings(), FakeSDK)
+        ai.initialize()
+        key = (1, 1, 1)
+        self.assertEqual(ai.mode_for(key), "plus")
+        await ai.respond(key, "質問")
+        self.assertIn("500〜1200", ai.sessions[key].session.instructions)
+        await ai.set_mode(key, "Menima AI Lite")
+        self.assertNotIn(key, ai.sessions)
+        await ai.respond(key, "質問")
+        self.assertIn("80〜180", ai.sessions[key].session.instructions)
+        self.assertEqual(ai.mode_for((1, 1, 2)), "plus")
+        self.assertEqual(ai.mode_for((1, 2, 1)), "plus")
+        session = ai.sessions[key].session
+        await ai.set_mode(key, "Lite")
+        self.assertIs(ai.sessions[key].session, session)
+        await ai.reset(key)
+        self.assertEqual(ai.mode_for(key), "lite")
+        with self.assertRaises(AIError):
+            await ai.set_mode(key, "invalid")
+        self.assertEqual(ai.mode_for(key), "lite")
+
+    async def test_mode_preferences_are_bounded_and_flash_is_distinct(self):
+        ai = AIChat(settings(), FakeSDK)
+        ai.initialize()
+        await ai.set_mode((1, 1, 1), "Lite")
+        await ai.set_mode((1, 1, 2), "フラッシュ")
+        await ai.respond((1, 1, 2), "質問")
+        self.assertIn("200〜450", ai.sessions[(1, 1, 2)].session.instructions)
+        await ai.set_mode((1, 1, 3), "Plus")
+        self.assertEqual(len(ai.modes), 2)
+        self.assertEqual(ai.mode_for((1, 1, 1)), "plus")
+
     async def test_flexible_instructions_and_configurable_generation(self):
         config = replace(settings(), ai_temperature=0.8, ai_top_p=0.95, ai_max_response_tokens=1200)
         ai = AIChat(config, FakeSDK)

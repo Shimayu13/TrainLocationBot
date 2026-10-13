@@ -9,7 +9,7 @@ import signal
 import discord
 from discord.ext import commands
 
-from .ai import AIChat, AIError
+from .ai import AIChat, AIError, AI_MODES
 from .catalog import COVERAGE, LEGACY_LINES, OPERATORS, TOBU_LINES
 from .config import ROOT, Settings
 from .messages import split_messages
@@ -142,7 +142,21 @@ def create_bot(settings):
 
     @bot.command(name="AI状態")
     async def ai_status(ctx):
-        await send(ctx, bot.ai.status)
+        await send(ctx, bot.ai.status + "\n応答モード: " + AI_MODES[bot.ai.mode_for(conversation_key(ctx))][0])
+
+    @bot.command(name="AIモード", aliases=["aiモード"])
+    async def ai_mode(ctx, *, mode: str = ""):
+        key = conversation_key(ctx)
+        if not mode.strip():
+            current = AI_MODES[bot.ai.mode_for(key)][0]
+            await send(ctx, f"現在のモード: {current}\nLite: 短文 / Flash: 中程度 / Plus: 詳しい説明・Markdown対応\n変更例: AIモード Lite")
+            return
+        previous = bot.ai.mode_for(key)
+        selected = await bot.ai.set_mode(key, mode)
+        message = f"このチャンネルでのあなたの応答を {selected} に切り替えました。"
+        if previous != bot.ai.mode_for(key):
+            message += "\n新しいモードで会話を始めるため、会話履歴をリセットしました。"
+        await send(ctx, message)
 
     return bot
 
