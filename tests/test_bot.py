@@ -3,6 +3,7 @@ from dataclasses import replace
 import importlib
 from pathlib import Path
 import unittest
+import os
 from unittest.mock import AsyncMock, Mock, patch
 
 from trainbot.ai import AIChat, AIError
@@ -59,6 +60,17 @@ class TransportTests(unittest.TestCase):
     def test_missing_standard_key_does_not_reuse_challenge(self):
         with self.assertRaisesRegex(ODPTError, "ODPT_STANDARD_CONSUMER_KEY"):
             ODPTClient(replace(settings(), standard_key="")).fetch("Train", "YokohamaMunicipal")
+
+
+class SettingsTests(unittest.TestCase):
+    def test_ai_generation_configuration_and_invalid_values(self):
+        with patch("trainbot.config.load_dotenv"), patch.dict(os.environ, {"AI_TEMPERATURE": "0.8", "AI_TOP_P": "0.95", "AI_MAX_RESPONSE_TOKENS": "1200"}, clear=True):
+            config = Settings.load()
+            self.assertEqual((config.ai_temperature, config.ai_top_p, config.ai_max_response_tokens), (0.8, 0.95, 1200))
+        for variable, value in [("AI_TEMPERATURE", "nan"), ("AI_TEMPERATURE", "1.5"), ("AI_TOP_P", "0"), ("AI_MAX_RESPONSE_TOKENS", "-1")]:
+            with patch("trainbot.config.load_dotenv"), patch.dict(os.environ, {variable: value}, clear=True):
+                with self.assertRaises(ValueError):
+                    Settings.load()
 
 
 class RailwayTests(unittest.TestCase):
@@ -190,8 +202,11 @@ class RailwayTests(unittest.TestCase):
 class FakeSession:
     def __init__(self, **kwargs):
         self.prompts = []
-    async def respond(self, prompt):
+        self.instructions = kwargs.get("instructions")
+        self.options = []
+    async def respond(self, prompt, *, options=None):
         self.prompts.append(prompt)
+        self.options.append(options)
         await asyncio.sleep(0)
         return "応答"
 
@@ -200,6 +215,9 @@ class FakeSDK:
     class SystemLanguageModel:
         def is_available(self): return True, None
     LanguageModelSession = FakeSession
+    GenerationOptions = staticmethod(lambda **kwargs: kwargs)
+    class SamplingMode:
+        random = staticmethod(lambda **kwargs: kwargs)
 
 
 class BotMessageTests(unittest.IsolatedAsyncioTestCase):
@@ -220,7 +238,7 @@ class BotMessageTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(bot, "get_context", new=AsyncMock(return_value=ctx)), patch.object(bot, "reply_ai", new=AsyncMock(side_effect=AIError("モデル未準備"))) as reply:
             await bot.on_message(Mock(author=Mock(id=200), content="<@100> "))
             reply.assert_not_awaited()
-            self.assertIn("質問を書いて", ctx.send.await_args.args[0])
+            self.assertIn("質問", ctx.send.await_args.args[0])
             await bot.on_message(Mock(author=Mock(id=200), content="<@100> 質問"))
             self.assertEqual(ctx.send.await_args.args[0], "モデル未準備")
 
@@ -268,6 +286,23 @@ class BotMessageTests(unittest.IsolatedAsyncioTestCase):
 
 
 class AITests(unittest.IsolatedAsyncioTestCase):
+    async def test_flexible_instructions_and_configurable_generation(self):
+        config = replace(settings(), ai_temperature=0.8, ai_top_p=0.95, ai_max_response_tokens=1200)
+        ai = AIChat(config, FakeSDK)
+        ai.initialize()
+        await ai.respond((1, 1, 1), "詳しく教えて")
+        session = ai.sessions[(1, 1, 1)].session
+        self.assertIn("利用者の長さや形式の指定を優先", session.instructions)
+        self.assertNotIn("Core 3", session.instructions)
+        self.assertEqual(session.prompts, ["詳しく教えて"])
+        self.assertEqual(session.options[0], {"temperature": 0.8, "sampling": {"probability_threshold": 0.95}, "maximum_response_tokens": 1200})
+
+    async def test_default_generation_does_not_impose_a_short_output_cap(self):
+        ai = AIChat(settings(), FakeSDK)
+        ai.initialize()
+        await ai.respond((1, 1, 1), "こんにちは")
+        self.assertIsNone(ai.sessions[(1, 1, 1)].session.options[0]["maximum_response_tokens"])
+
     async def test_isolation_reset_and_bounded_history(self):
         ai = AIChat(settings(), FakeSDK)
         ai.initialize()
@@ -291,7 +326,7 @@ class AITests(unittest.IsolatedAsyncioTestCase):
         ai.initialize()
         with self.assertRaises(AIError):
             await ai.respond((1, 1, 1), "長" * 101)
-        async def slow(prompt):
+        async def slow(prompt, **kwargs):
             await asyncio.sleep(10)
         ai.sessions[(1, 1, 1)] = __import__("trainbot.ai", fromlist=["Conversation"]).Conversation(Mock(respond=slow), __import__("time").monotonic())
         with self.assertRaisesRegex(AIError, "時間切れ"):

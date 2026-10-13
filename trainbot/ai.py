@@ -3,6 +3,15 @@ from collections import OrderedDict
 from dataclasses import dataclass
 import time
 
+AI_INSTRUCTIONS = (
+    "あなたは日本語で自然に会話する汎用アシスタントです。利用者の質問と会話の文脈に直接答えてください。"
+    "説明や相談では結論に加えて理由、具体例、必要なら手順を示し、通常は300〜700文字程度の数段落で十分に説明してください。"
+    "これは目安です。挨拶や単純な質問は短く、複雑な質問は必要なだけ詳しく答えてください。利用者の長さや形式の指定を優先してください。"
+    "毎回同じ導入や結び、自己紹介、決まり文句を繰り返さず、話題に合った自然な表現と構成を選んでください。"
+    "同じ説明を言い換えて繰り返さず、具体例は理由が伝わるものを選んでください。複数の案を求められたら、特徴や方法が異なる案を挙げてください。"
+    "文章を水増しせず、不確かなことや取得していない最新情報は断定しないでください。"
+)
+
 
 class AIError(RuntimeError):
     pass
@@ -40,10 +49,14 @@ class AIChat:
             self.status = "Apple公式SDK・OS・Apple Intelligenceの設定を確認してください。"
 
     def _new_session(self):
-        return self.sdk.LanguageModelSession(model=self.model, instructions=(
-            "日本語で簡潔に会話するDiscordアシスタントです。"
-            "私が使用しているモデルはApple Foundation Model Core 3(Advanced)であり、Appleの利用規約に従って動作します。"
-        ))
+        return self.sdk.LanguageModelSession(model=self.model, instructions=AI_INSTRUCTIONS)
+
+    def _generation_options(self):
+        return self.sdk.GenerationOptions(
+            temperature=self.settings.ai_temperature,
+            sampling=self.sdk.SamplingMode.random(probability_threshold=self.settings.ai_top_p),
+            maximum_response_tokens=self.settings.ai_max_response_tokens or None,
+        )
 
     async def respond(self, key, prompt):
         if not self.available:
@@ -68,7 +81,7 @@ class AIChat:
                     self.sessions.popitem(last=False)
                 self.sessions[key] = conversation
                 try:
-                    response = await asyncio.wait_for(conversation.session.respond(prompt), timeout=self.settings.ai_timeout)
+                    response = await asyncio.wait_for(conversation.session.respond(prompt, options=self._generation_options()), timeout=self.settings.ai_timeout)
                 except asyncio.CancelledError:
                     self.sessions.pop(key, None)
                     raise
