@@ -10,6 +10,7 @@ AI_INSTRUCTIONS = (
     "毎回同じ導入や結び、自己紹介、決まり文句を繰り返さず、話題に合った自然な表現と構成を選んでください。"
     "同じ説明を言い換えて繰り返さず、具体例は理由が伝わるものを選んでください。複数の案を求められたら、特徴や方法が異なる案を挙げてください。"
     "文章を水増しせず、不確かなことや取得していない最新情報は断定しないでください。"
+    "各質問に添付された最新の応答モードに従ってください。過去のモードや回答の長さより、今回のモードを優先してください。"
 )
 
 
@@ -58,7 +59,7 @@ class AIChat:
             self.status = "Apple公式SDK・OS・Apple Intelligenceの設定を確認してください。"
 
     def mode_for(self, key):
-        return self.modes.get(key, "plus")
+        return self.modes.get(key, self.sessions[key].mode if key in self.sessions else "plus")
 
     async def set_mode(self, key, name):
         mode = name.strip().casefold().removeprefix("menima ai ")
@@ -66,16 +67,16 @@ class AIChat:
         if mode not in AI_MODES:
             raise AIError("モードは Lite・Flash・Plus から選んでください。例: AIモード Lite")
         async with self.lock:
-            if self.mode_for(key) != mode:
-                self.sessions.pop(key, None)
             self.modes.pop(key, None)
             while len(self.modes) >= self.settings.ai_max_sessions:
                 self.modes.popitem(last=False)
             self.modes[key] = mode
+            if key in self.sessions:
+                self.sessions[key].mode = mode
         return AI_MODES[mode][0]
 
-    def _new_session(self, mode="plus"):
-        return self.sdk.LanguageModelSession(model=self.model, instructions=AI_INSTRUCTIONS + "応答モード: " + AI_MODES[mode][0] + "。" + AI_MODES[mode][1])
+    def _new_session(self):
+        return self.sdk.LanguageModelSession(model=self.model, instructions=AI_INSTRUCTIONS)
 
     def _generation_options(self):
         return self.sdk.GenerationOptions(
@@ -97,34 +98,31 @@ class AIChat:
         try:
             async with self.lock:
                 now = time.monotonic()
-                for old_key in list(self.sessions):
-                    if now - self.sessions[old_key].touched >= self.settings.ai_ttl:
-                        del self.sessions[old_key]
-                conversation = self.sessions.pop(key, None)
+                conversation = self.sessions.get(key)
                 mode = self.mode_for(key)
                 if key in self.modes:
                     self.modes.move_to_end(key)
-                if conversation is None or conversation.turns >= self.settings.ai_max_turns or conversation.mode != mode:
-                    conversation = Conversation(self._new_session(mode), now, mode=mode)
-                while len(self.sessions) >= self.settings.ai_max_sessions:
-                    self.sessions.popitem(last=False)
+                if conversation is None:
+                    if len(self.sessions) >= self.settings.ai_max_sessions:
+                        raise AIError("AIの会話保持件数が上限です。履歴を消す場合は AIリセット を実行してください。")
+                    conversation = Conversation(self._new_session(), now, mode=mode)
+                conversation.mode = mode
                 self.sessions[key] = conversation
+                model_prompt = "今回の応答モード: " + AI_MODES[mode][0] + "\n" + AI_MODES[mode][1] + "\n\n利用者の質問:\n" + prompt
                 try:
-                    response = await asyncio.wait_for(conversation.session.respond(prompt, options=self._generation_options()), timeout=self.settings.ai_timeout)
+                    response = await asyncio.wait_for(conversation.session.respond(model_prompt, options=self._generation_options()), timeout=self.settings.ai_timeout)
                 except asyncio.CancelledError:
-                    self.sessions.pop(key, None)
                     raise
                 except Exception as exc:
-                    self.sessions.pop(key, None)
                     kind = type(exc).__name__
                     if isinstance(exc, TimeoutError):
-                        message = "AIの応答が時間切れになりました。会話をリセットしました。"
+                        message = "AIの応答が時間切れになりました。履歴は保持しています。再試行するか、必要なら AIリセット を実行してください。"
                     elif kind == "ExceededContextWindowSizeError":
-                        message = "会話が長すぎるためリセットしました。質問を短くして再試行してください。"
+                        message = "コンテキスト上限に達しました。履歴は保持しています。新しく会話を始める場合は AIリセット を実行してください。"
                     elif kind == "GuardrailViolationError":
                         message = "この質問にはモデルの制約により回答できません。"
                     else:
-                        message = "AIの生成に失敗しました。会話をリセットしました。"
+                        message = "AIの生成に失敗しました。履歴は保持しています。再試行するか、必要なら AIリセット を実行してください。"
                     raise AIError(message) from None
                 conversation.turns += 1
                 conversation.touched = time.monotonic()
@@ -134,4 +132,9 @@ class AIChat:
 
     async def reset(self, key):
         async with self.lock:
+            mode = self.mode_for(key)
             self.sessions.pop(key, None)
+            self.modes.pop(key, None)
+            while len(self.modes) >= self.settings.ai_max_sessions:
+                self.modes.popitem(last=False)
+            self.modes[key] = mode

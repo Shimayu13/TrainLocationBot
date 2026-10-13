@@ -302,17 +302,18 @@ class BotMessageTests(unittest.IsolatedAsyncioTestCase):
 
 
 class AITests(unittest.IsolatedAsyncioTestCase):
-    async def test_mode_switching_resets_history_and_isolated_by_user_channel(self):
+    async def test_mode_switching_preserves_history_and_isolated_by_user_channel(self):
         ai = AIChat(settings(), FakeSDK)
         ai.initialize()
         key = (1, 1, 1)
         self.assertEqual(ai.mode_for(key), "plus")
         await ai.respond(key, "質問")
-        self.assertIn("500〜1200", ai.sessions[key].session.instructions)
+        self.assertIn("500〜1200", ai.sessions[key].session.prompts[-1])
+        original = ai.sessions[key].session
         await ai.set_mode(key, "Menima AI Lite")
-        self.assertNotIn(key, ai.sessions)
+        self.assertIs(ai.sessions[key].session, original)
         await ai.respond(key, "質問")
-        self.assertIn("80〜180", ai.sessions[key].session.instructions)
+        self.assertIn("80〜180", ai.sessions[key].session.prompts[-1])
         self.assertEqual(ai.mode_for((1, 1, 2)), "plus")
         self.assertEqual(ai.mode_for((1, 2, 1)), "plus")
         session = ai.sessions[key].session
@@ -330,7 +331,7 @@ class AITests(unittest.IsolatedAsyncioTestCase):
         await ai.set_mode((1, 1, 1), "Lite")
         await ai.set_mode((1, 1, 2), "フラッシュ")
         await ai.respond((1, 1, 2), "質問")
-        self.assertIn("200〜450", ai.sessions[(1, 1, 2)].session.instructions)
+        self.assertIn("200〜450", ai.sessions[(1, 1, 2)].session.prompts[-1])
         await ai.set_mode((1, 1, 3), "Plus")
         self.assertEqual(len(ai.modes), 2)
         self.assertEqual(ai.mode_for((1, 1, 1)), "plus")
@@ -343,7 +344,7 @@ class AITests(unittest.IsolatedAsyncioTestCase):
         session = ai.sessions[(1, 1, 1)].session
         self.assertIn("利用者の長さや形式の指定を優先", session.instructions)
         self.assertNotIn("Core 3", session.instructions)
-        self.assertEqual(session.prompts, ["詳しく教えて"])
+        self.assertTrue(session.prompts[0].endswith("利用者の質問:\n詳しく教えて"))
         self.assertEqual(session.options[0], {"temperature": 0.8, "sampling": {"probability_threshold": 0.95}, "maximum_response_tokens": 1200})
 
     async def test_default_generation_does_not_impose_a_short_output_cap(self):
@@ -361,7 +362,12 @@ class AITests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNot(first, ai.sessions[(1, 1, 2)].session)
         await ai.respond((1, 1, 1), "丙")
         await ai.respond((1, 1, 1), "丁")
-        self.assertIsNot(first, ai.sessions[(1, 1, 1)].session)
+        self.assertIs(first, ai.sessions[(1, 1, 1)].session)
+        ai.sessions[(1, 1, 1)].touched = 0
+        await ai.respond((1, 1, 1), "戊")
+        self.assertIs(first, ai.sessions[(1, 1, 1)].session)
+        with self.assertRaisesRegex(AIError, "会話保持件数"):
+            await ai.respond((1, 1, 3), "第三の利用者")
         await ai.reset((1, 1, 1))
         self.assertNotIn((1, 1, 1), ai.sessions)
 
@@ -370,7 +376,7 @@ class AITests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(AIError):
             await ai.respond((1, 1, 1), "質問")
 
-    async def test_limit_and_timeout_discard_session(self):
+    async def test_limit_and_timeout_preserve_session(self):
         ai = AIChat(settings(), FakeSDK)
         ai.initialize()
         with self.assertRaises(AIError):
@@ -381,8 +387,40 @@ class AITests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(AIError, "時間切れ"):
             await ai.respond((1, 1, 1), "質問")
         self.assertEqual(ai.pending, 0)
-        self.assertNotIn((1, 1, 1), ai.sessions)
+        self.assertIn((1, 1, 1), ai.sessions)
 
+
+
+class ContextRetentionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_overflow_keeps_session(self):
+        ai = AIChat(settings(), FakeSDK)
+        ai.initialize()
+        key = (1, 2, 3)
+        await ai.respond(key, "質問")
+        session = ai.sessions[key].session
+        error = type("ExceededContextWindowSizeError", (Exception,), {})
+        with patch.object(session, "respond", new=AsyncMock(side_effect=error())):
+            with self.assertRaisesRegex(AIError, "AIリセット"):
+                await ai.respond(key, "続けて")
+        self.assertIs(ai.sessions[key].session, session)
+        await ai.reset(key)
+        self.assertNotIn(key, ai.sessions)
+
+    async def test_explicit_clear_is_scoped_to_requesting_user(self):
+        bot = create_bot(settings())
+        bot.ai = AIChat(settings(), FakeSDK)
+        bot.ai.initialize()
+        ctx = Mock(guild=Mock(id=1), channel=Mock(id=2), author=Mock(id=3), send=AsyncMock())
+        key = (1, 2, 3)
+        other = (1, 2, 4)
+        await bot.ai.set_mode(key, "Lite")
+        await bot.ai.respond(key, "質問")
+        await bot.ai.respond(other, "別の利用者")
+        await bot.reply_ai(ctx, "コンテキストを空にしてください")
+        self.assertNotIn(key, bot.ai.sessions)
+        self.assertIn(other, bot.ai.sessions)
+        self.assertEqual(bot.ai.mode_for(key), "lite")
+        self.assertIn("消去しました", ctx.send.await_args.args[0])
 
 if __name__ == "__main__":
     unittest.main()

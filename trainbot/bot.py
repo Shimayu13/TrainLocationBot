@@ -63,6 +63,10 @@ class TrainBot(commands.Bot):
         await self.invoke(ctx)
 
     async def reply_ai(self, ctx, prompt):
+        if re.fullmatch(r"(?:会話履歴|履歴|コンテキスト(?:ウィンドウ)?)を(?:削除|リセット|クリア|空に)して(?:ください)?[。！!]?", prompt.strip()):
+            await self.ai.reset(conversation_key(ctx))
+            await send(ctx, "あなたのこのチャンネルでの会話履歴を消去しました。応答モードは維持しています。")
+            return
         async with ctx.typing():
             result = await self.ai.respond(conversation_key(ctx), prompt)
         await send(ctx, result)
@@ -135,7 +139,7 @@ def create_bot(settings):
     async def ai(ctx, *, prompt: str):
         await bot.reply_ai(ctx, prompt)
 
-    @bot.command(name="AIリセット", aliases=["aiリセット"])
+    @bot.command(name="AIリセット", aliases=["aiリセット", "AI履歴削除", "AIコンテキストクリア"])
     async def ai_reset(ctx):
         await bot.ai.reset(conversation_key(ctx))
         await send(ctx, "あなたのこのチャンネルでのAI会話をリセットしました。")
@@ -151,11 +155,9 @@ def create_bot(settings):
             current = AI_MODES[bot.ai.mode_for(key)][0]
             await send(ctx, f"現在のモード: {current}\nLite: 短文 / Flash: 中程度 / Plus: 詳しい説明・Markdown対応\n変更例: AIモード Lite")
             return
-        previous = bot.ai.mode_for(key)
         selected = await bot.ai.set_mode(key, mode)
         message = f"このチャンネルでのあなたの応答を {selected} に切り替えました。"
-        if previous != bot.ai.mode_for(key):
-            message += "\n新しいモードで会話を始めるため、会話履歴をリセットしました。"
+        message += "\n会話履歴はそのまま引き継ぎます。"
         await send(ctx, message)
 
     return bot
