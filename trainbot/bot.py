@@ -153,7 +153,7 @@ def create_bot(settings):
         key = conversation_key(ctx)
         if not mode.strip():
             current = AI_MODES[bot.ai.mode_for(key)][0]
-            await send(ctx, f"現在のモード: {current}\nLite: 短文 / Flash: 中程度 / Plus: 詳しい説明・Markdown対応\n変更例: AIモード Lite")
+            await send(ctx, f"現在のモード: {current}\nLite: 短文 / Flash: 要点と必要な補足・Markdown対応 / Plus: 必要に応じて詳しい説明・Markdown対応\n変更例: AIモード Lite")
             return
         selected = await bot.ai.set_mode(key, mode)
         message = f"このチャンネルでのあなたの応答を {selected} に切り替えました。"

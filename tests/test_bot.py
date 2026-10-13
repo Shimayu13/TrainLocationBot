@@ -308,7 +308,7 @@ class AITests(unittest.IsolatedAsyncioTestCase):
         key = (1, 1, 1)
         self.assertEqual(ai.mode_for(key), "plus")
         await ai.respond(key, "質問")
-        self.assertIn("500〜1200", ai.sessions[key].session.prompts[-1])
+        self.assertIn("無理に補足を増やさない", ai.sessions[key].session.prompts[-1])
         original = ai.sessions[key].session
         await ai.set_mode(key, "Menima AI Lite")
         self.assertIs(ai.sessions[key].session, original)
@@ -331,7 +331,7 @@ class AITests(unittest.IsolatedAsyncioTestCase):
         await ai.set_mode((1, 1, 1), "Lite")
         await ai.set_mode((1, 1, 2), "フラッシュ")
         await ai.respond((1, 1, 2), "質問")
-        self.assertIn("200〜450", ai.sessions[(1, 1, 2)].session.prompts[-1])
+        self.assertIn("必要な補足だけ", ai.sessions[(1, 1, 2)].session.prompts[-1])
         await ai.set_mode((1, 1, 3), "Plus")
         self.assertEqual(len(ai.modes), 2)
         self.assertEqual(ai.mode_for((1, 1, 1)), "plus")
