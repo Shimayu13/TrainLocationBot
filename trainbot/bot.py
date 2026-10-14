@@ -15,6 +15,7 @@ from .config import ROOT, Settings
 from .messages import split_messages
 from .odpt import ODPTError
 from .services import RailwayService
+from .attachments import prepare_attachments
 
 
 async def send(ctx, text, *, code=False):
@@ -52,7 +53,9 @@ class TrainBot(commands.Bot):
         match = mention.search(content) if isinstance(content, str) else None
         if match:
             prompt = mention.sub("", content[match.end():]).strip()
-            if not prompt:
+            attachments = getattr(message, "attachments", [])
+            attachments = attachments if isinstance(attachments, (list, tuple)) else []
+            if not prompt and not attachments:
                 await send(ctx, "こんにちは。私はApple Foundation Modelを用いたAIです。例のように質問を送信してください。例: @Bot こんにちは")
                 return
             try:
@@ -68,7 +71,19 @@ class TrainBot(commands.Bot):
             await send(ctx, "あなたのこのチャンネルでの会話履歴を消去しました。応答モードは維持しています。")
             return
         async with ctx.typing():
-            result = await self.ai.respond(conversation_key(ctx), prompt)
+            files = getattr(getattr(ctx, "message", None), "attachments", [])
+            files = files if isinstance(files, (list, tuple)) else []
+            if files:
+                if not self.ai.available:
+                    raise AIError(self.ai.status)
+                if len(prompt) > self.ai.settings.ai_max_input:
+                    raise AIError(f"入力は{self.ai.settings.ai_max_input}文字以内にしてください。")
+                async with prepare_attachments(files) as prepared:
+                    result = await self.ai.respond(conversation_key(ctx), prompt or "添付の内容を説明してください。", images=prepared.images, document_text=prepared.text)
+                    if prepared.notices:
+                        result = "\n".join(prepared.notices) + "\n\n" + result
+            else:
+                result = await self.ai.respond(conversation_key(ctx), prompt)
         await send(ctx, result)
 
     async def on_command_error(self, ctx, error):
@@ -136,7 +151,7 @@ def create_bot(settings):
         await send(ctx, "あなたのおみくじの結果は: " + random.choice(["大吉", "中吉", "小吉", "吉", "末吉", "凶", "大凶"]))
 
     @bot.command(name="AI", aliases=["ai"])
-    async def ai(ctx, *, prompt: str):
+    async def ai(ctx, *, prompt: str = ""):
         await bot.reply_ai(ctx, prompt)
 
     @bot.command(name="AIリセット", aliases=["aiリセット", "AI履歴削除", "AIコンテキストクリア"])

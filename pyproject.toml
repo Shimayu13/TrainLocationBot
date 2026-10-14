@@ -7,7 +7,7 @@ name = "train-location-bot"
 version = "0.2.0"
 description = "Discord railway information bot with Apple on-device AI"
 requires-python = ">=3.11"
-dependencies = ["discord.py>=2.4,<3", "requests>=2.32,<3", "python-dotenv>=1.0,<2"]
+dependencies = ["discord.py>=2.4,<3", "requests>=2.32,<3", "python-dotenv>=1.0,<2", "Pillow>=11,<13", "pypdf>=6.20.1,<7"]
 
 [project.optional-dependencies]
 ai = ["apple-fm-sdk>=0.2.1,<0.3; sys_platform == 'darwin' and platform_machine == 'arm64'"]
