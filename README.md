@@ -2,6 +2,8 @@
 
 Python製Discord Bot。既存の路線表示とミニゲームを保持し、JR東日本・都営地下鉄・東武（本線系統を含む）・横浜市営地下鉄の列車位置と運行情報、Apple公式Foundation Models SDKによるローカルAI会話に対応します。京急と従来の運行情報11事業者も残しています。
 
+Mac mini＋MacBook Pro／Airの協調AIにも対応します。1問だけなら最大3台で回答を比較・統合し、質問が重なれば各端末に振り分けます。初期設定は従来の単独AIです。構成・設定・Workerの自動起動は [協調AIの設定手順](docs/cluster.md) を参照してください。
+
 ## 構成
 
 | 場所 | 役割 |
@@ -12,6 +14,9 @@ Python製Discord Bot。既存の路線表示とミニゲームを保持し、JR�
 | `trainbot/odpt.py` | API接続先・認証・タイムアウト・再試行・キャッシュ |
 | `trainbot/services.py` | 運行情報整形・追加路線の列車位置表示 |
 | `trainbot/ai.py` | Apple公式SDK・会話管理 |
+| `trainbot/cluster.py` | 質問優先の振り分け・余力での比較統合・確定履歴 |
+| `trainbot/worker.py` | MacBook用の認証付きAFMサーバー |
+| `trainbot/cluster_protocol.py` / `worker_client.py` | 添付転送・入力制限・端末間通信 |
 | `trainbot/legacy/` | 既存の路線別表示ロジック |
 | `scripts/` | 認証取り込み・起動・launchd設定生成 |
 | `tests/` | 通信・コマンド・AI・分割送信の回帰テスト |

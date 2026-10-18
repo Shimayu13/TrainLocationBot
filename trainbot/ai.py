@@ -60,6 +60,12 @@ class AIChat:
             self.available = False
             self.status = "Apple公式SDK・OS・Apple Intelligenceの設定を確認してください。"
 
+    async def start(self):
+        """Optional asynchronous backend startup (local mode needs none)."""
+
+    async def close(self):
+        """Optional asynchronous backend cleanup."""
+
     def mode_for(self, key):
         return self.modes.get(key, self.sessions[key].mode if key in self.sessions else "plus")
 
@@ -148,3 +154,10 @@ class AIChat:
             while len(self.modes) >= self.settings.ai_max_sessions:
                 self.modes.popitem(last=False)
             self.modes[key] = mode
+
+
+def create_ai(settings):
+    if settings.ai_cluster_enabled:
+        from .cluster import ClusterChat
+        return ClusterChat(settings)
+    return AIChat(settings)

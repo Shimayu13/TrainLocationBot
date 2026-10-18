@@ -9,7 +9,7 @@ import signal
 import discord
 from discord.ext import commands
 
-from .ai import AIChat, AIError, AI_MODES
+from .ai import AIError, AI_MODES, create_ai
 from .catalog import COVERAGE, LEGACY_LINES, OPERATORS, TOBU_LINES
 from .config import ROOT, Settings
 from .messages import split_messages
@@ -32,12 +32,19 @@ class TrainBot(commands.Bot):
         intents = discord.Intents.default()
         intents.message_content = True
         super().__init__(command_prefix="", intents=intents, allowed_mentions=discord.AllowedMentions.none())
-        self.ai = AIChat(settings)
+        self.ai = create_ai(settings)
         self.railways = RailwayService()
 
     async def setup_hook(self):
         await asyncio.to_thread(self.ai.initialize)
+        await self.ai.start()
         logging.getLogger(__name__).info("AI status: %s", self.ai.status)
+
+    async def close(self):
+        try:
+            await self.ai.close()
+        finally:
+            await super().close()
 
     async def on_ready(self):
         logging.getLogger(__name__).info("Discord connected: user_id=%s", self.user.id)

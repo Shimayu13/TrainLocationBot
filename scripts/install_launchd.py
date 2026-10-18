@@ -11,17 +11,20 @@ LABEL = "jp.trainlocationbot.discord"
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--install", action="store_true")
+    parser.add_argument("--worker", action="store_true", help="Generate the laptop AFM worker LaunchAgent")
     args = parser.parse_args()
     (ROOT / "logs").mkdir(exist_ok=True)
+    label = "jp.trainlocationbot.worker" if args.worker else LABEL
+    script = "run_worker.sh" if args.worker else "run_bot.sh"
     config = {
-        "Label": LABEL,
-        "ProgramArguments": ["/bin/sh", str(ROOT / "scripts" / "run_bot.sh")],
+        "Label": label,
+        "ProgramArguments": ["/bin/sh", str(ROOT / "scripts" / script)],
         "WorkingDirectory": str(ROOT),
         "RunAtLoad": True, "KeepAlive": True, "ThrottleInterval": 60,
         "EnvironmentVariables": {"PYTHONUNBUFFERED": "1"},
         "StandardOutPath": "/dev/null", "StandardErrorPath": "/dev/null",
     }
-    destination = ROOT / "launchd" / (LABEL + ".plist")
+    destination = ROOT / "launchd" / (label + ".plist")
     destination.write_bytes(plistlib.dumps(config))
     print("生成:", destination)
     if args.install:

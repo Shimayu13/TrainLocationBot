@@ -26,10 +26,15 @@ class Settings:
     ai_temperature: float = 0.7
     ai_top_p: float = 0.9
     ai_max_response_tokens: int = 0
+    ai_cluster_enabled: bool = False
+    ai_worker_urls: tuple[str, ...] = ()
+    ai_worker_token: str = field(default="", repr=False)
+    ai_cluster_timeout: int = 240
+    ai_images_enabled: bool = True
 
     @classmethod
-    def load(cls):
-        load_dotenv(os.environ.get("TRAINBOT_ENV_FILE", ROOT / ".env"), override=False)
+    def load(cls, *, env_file=None):
+        load_dotenv(env_file if env_file is not None else os.environ.get("TRAINBOT_ENV_FILE", ROOT / ".env"), override=False)
         def positive(name, default):
             value = int(os.environ.get(name, default))
             if value <= 0:
@@ -56,4 +61,9 @@ class Settings:
             positive("AI_MAX_TURNS", 8), positive("AI_MAX_INPUT_CHARS", 2000),
             bounded_float("AI_TEMPERATURE", 0.7, 0.0, 1.0),
             bounded_float("AI_TOP_P", 0.9, 0.01, 1.0), response_tokens,
+            os.getenv("AI_CLUSTER_ENABLED", "false").lower() in {"1", "true", "yes"},
+            tuple(url.strip().rstrip("/") for url in os.getenv("AI_WORKER_URLS", "").split(",") if url.strip()),
+            os.getenv("AI_WORKER_TOKEN", ""),
+            positive("AI_CLUSTER_TIMEOUT_SECONDS", 240),
+            os.getenv("AI_IMAGES_ENABLED", "true").lower() in {"1", "true", "yes"},
         )
