@@ -27,11 +27,11 @@ Mac mini＋MacBook Pro／Airの協調AIにも対応します。1問だけなら�
 
 開発機はMacBook Pro M2 Pro、本番機はMac mini M4です。両方ともApple Siliconですが、`.venv`・`.env`・生成済みlaunchd plistはコピーせず、本番機のPython・OS・配置パスに合わせて作り直してください。APIキーは本番機の `.env` に設定し、AI推論とAPI接続を本番機でも検証します。Mac miniでの実測・常時稼働試験は別途必要です。
 
-Python 3.11以上のarm64環境を使用してください。Apple SDKの前提はmacOS 26以降、Xcode 26以降とCommand Line Tools、Apple Intelligence有効化です。モデルのダウンロード完了と利用可否は起動時に確認します。
+Python 3.11以上のarm64環境を使用してください。現在の検証環境はPython 3.15です。Apple SDKの前提はmacOS 26以降、Xcode 26以降とCommand Line Tools、Apple Intelligence有効化です。モデルのダウンロード完了と利用可否は起動時に確認します。
 
 ```sh
 cd /Users/yuki/Developer/TrainLocationBot
-/opt/homebrew/bin/python3.11 -m venv .venv
+/opt/homebrew/bin/python3.15 -m venv .venv
 .venv/bin/python -m pip install -e '.[ai]'
 ```
 

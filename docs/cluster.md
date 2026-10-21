@@ -23,11 +23,11 @@ Mac miniだけがDiscordに接続します。質問が1件なら最大3台で「
 
 ```sh
 cd ~/Developer/TrainLocationBot
-/opt/homebrew/bin/python3.11 -m venv .venv
+/opt/homebrew/bin/python3.15 -m venv .venv
 .venv/bin/python -m pip install -e '.[ai]'
 ```
 
-Python 3.11がまだない端末では、先にインストールしてください。既存環境に更新する場合は、仮想環境の再作成は不要です。再現可能な依存関係は `requirements-macos.lock.txt` にもあります。
+Python 3.15がまだない端末では、先にインストールしてください。既存環境に更新する場合は、仮想環境をPython 3.15で再作成してください。再現可能な依存関係は `requirements-macos.lock.txt` にもあります。
 
 ## 2. Worker用のキー
 
